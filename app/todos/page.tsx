@@ -1,5 +1,8 @@
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@/lib/supabase/server";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type Todo = {
   id: number;
@@ -74,7 +77,7 @@ export default async function TodoPage() {
                 </p>
               </div>
               <form action={deleteTodo}>
-                <input type="hidden" name="id" value={t.id} />
+                <input type="hidden" name="id" value={String(t.id)} />
                 <button
                   type="submit"
                   className="text-sm rounded-md border border-red-600 text-red-500 px-3 py-1 hover:bg-red-600 hover:text-white transition"
