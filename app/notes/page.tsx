@@ -18,7 +18,7 @@ export default async function NotesPage() {
   // Toome kõik märkmed
   const { data: notes } = await supabase
     .from("notes")
-    .select("*")
+    .select("id, title")
     .order("id", { ascending: false });
 
   // Märkme lisamine

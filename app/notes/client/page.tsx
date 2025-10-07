@@ -24,7 +24,7 @@ export default function ClientNotesPage() {
       if (user) {
         const { data } = await supabase
           .from("notes")
-          .select("*")
+          .select("id, title")
           .order("id", { ascending: false });
         setNotes(data as Note[] | null);
       } else {

@@ -15,7 +15,7 @@ export default async function TodoPage() {
   const supabase = await createClient();
   const { data: todos } = await supabase
     .from("todos")
-    .select("*")
+    .select("id, title, created_at")
     .order("id", { ascending: false });
 
   // CREATE
@@ -27,7 +27,7 @@ export default async function TodoPage() {
     const supabase = await createClient();
     await supabase.from("todos").insert({ title });
 
-    revalidatePath("/todo");
+    revalidatePath("/todos");
   }
 
   // DELETE
