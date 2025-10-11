@@ -18,60 +18,102 @@ export default function ClientNotesPage() {
   const [editId, setEditId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
 
+  // Supabase client on vajalik autentimiseks
   const supabase = createClient();
 
   useEffect(() => {
-    const getData = async () => {
+    const checkUserAndFetchNotes = async () => {
+      // 1. SAMM: Kontrollime kasutajat endiselt otse Supabase'ist
       const {
         data: { user },
       } = await supabase.auth.getUser();
       setUser(user);
 
       if (user) {
-        const { data } = await supabase
-          .from("notes")
-          .select("id, title")
-          .order("id", { ascending: false });
-        setNotes((data as Note[]) ?? []);
+        // --- VANA KOOD (otse Supabasest) ---
+        // const { data } = await supabase
+        //   .from("notes")
+        //   .select("id, title")
+        //   .order("id", { ascending: false });
+        // setNotes((data as Note[]) ?? []);
+
+        // --- UUS KOOD (läbi meie API) ---
+        // Teeme GET päringu omaenda API otspunkti.
+        // Kliendipoolsed päringud lisavad automaatselt vajalikud küpsised,
+        // seega API teab, kes on sisse logitud.
+        const response = await fetch("/api/notes");
+        if (response.ok) {
+          const data = await response.json();
+          setNotes(data);
+        } else {
+          console.error("Failed to fetch notes");
+          setNotes([]);
+        }
       } else {
         setNotes([]);
       }
     };
-    getData();
-  }, [supabase]);
+    checkUserAndFetchNotes();
+    // Eemaldame 'supabase' sõltuvuse, et vältida liigseid päringuid.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // CREATE
   const addNote = async (e: FormEvent) => {
     e.preventDefault();
     if (!newNote.trim() || !user) return;
 
-    const { data: addedNote } = await supabase
-      .from("notes")
-      .insert({ title: newNote.trim(), user_id: user.id })
-      .select()
-      .single();
+    // --- VANA KOOD ---
+    // const { data: addedNote } = await supabase
+    //   .from("notes")
+    //   .insert({ title: newNote.trim(), user_id: user.id })
+    //   .select()
+    //   .single();
 
-    if (addedNote) {
+    // --- UUS KOOD ---
+    // Teeme POST päringu, saates uue märkme pealkirja kehas (body).
+    const response = await fetch("/api/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: newNote.trim() }),
+    });
+
+    if (response.ok) {
+      const addedNote = await response.json();
       setNotes([addedNote as Note, ...(notes || [])]);
       setNewNote("");
+    } else {
+      console.error("Failed to add note");
     }
   };
 
   // DELETE
   const deleteNote = async (id: number) => {
-    await supabase.from("notes").delete().eq("id", id);
-    setNotes((prev) => (prev ? prev.filter((n) => n.id !== id) : prev));
-    // kui kustutad parajasti muudetava, sule paneel
-    if (editId === id) {
-      setEditId(null);
-      setEditValue("");
+    // --- VANA KOOD ---
+    // await supabase.from("notes").delete().eq("id", id);
+
+    // --- UUS KOOD ---
+    // Teeme DELETE päringu spetsiifilisele URL-ile, mis sisaldab märkme ID-d.
+    const response = await fetch(`/api/notes/${id}`, {
+      method: "DELETE",
+    });
+
+    if (response.ok) {
+      // DELETE tagastab 204, mis on "ok"
+      setNotes((prev) => (prev ? prev.filter((n) => n.id !== id) : prev));
+      // kui kustutad parajasti muudetava, sule paneel
+      if (editId === id) {
+        setEditId(null);
+        setEditValue("");
+      }
+    } else {
+      console.error("Failed to delete note");
     }
   };
 
-  // OPEN CHANGE PANEEL
+  // OPEN CHANGE PANEEL - SEE JÄÄB SAMAKS, KUNA HALDAB AINULT UI OLEKUT
   const startEdit = (note: Note) => {
     if (editId === note.id) {
-      // kui juba avatud, sulge
       setEditId(null);
       setEditValue("");
     } else {
@@ -86,19 +128,33 @@ export default function ClientNotesPage() {
     const title = editValue.trim();
     if (!title) return;
 
-    const { error } = await supabase
-      .from("notes")
-      .update({ title })
-      .eq("id", id);
-    if (!error) {
-      // optimistlik uuendus
+    // --- VANA KOOD ---
+    // const { error } = await supabase
+    //   .from("notes")
+    //   .update({ title })
+    //   .eq("id", id);
+    // if (!error) {
+    //   // ...
+    // }
+
+    // --- UUS KOOD ---
+    // Teeme PATCH päringu, saates uue pealkirja kehas.
+    const response = await fetch(`/api/notes/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+
+    if (response.ok) {
+      // uuendus
       setNotes((prev) =>
         prev ? prev.map((n) => (n.id === id ? { ...n, title } : n)) : prev
       );
       setEditId(null);
       setEditValue("");
     } else {
-      console.error("Update failed:", error.message);
+      const result = await response.json();
+      console.error("Update failed:", result.error);
     }
   };
 
@@ -128,12 +184,11 @@ export default function ClientNotesPage() {
         <ul className="space-y-3">
           {notes?.map((note) => (
             <li
-              key={`${note.id}-${note.title}`} // kui pealkiri muutub, remountib rea (hea fallback)
+              key={`${note.id}-${note.title}`}
               className="flex items-center justify-between rounded-md border border-border bg-card px-4 py-3"
             >
               <span className="font-medium truncate">{note.title}</span>
 
-              {/* Parempoolsed nupud; paneel avaneb nupugrupi paremale */}
               <div className="relative flex items-center gap-2 overflow-visible">
                 {/* DELETE */}
                 <button
@@ -153,7 +208,7 @@ export default function ClientNotesPage() {
                   Change
                 </button>
 
-                {/* Paneel paremale, nähtav ainult aktiivsel real */}
+                {/* Paneel paremale */}
                 {editId === note.id && (
                   <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 z-10">
                     <form
@@ -180,12 +235,6 @@ export default function ClientNotesPage() {
               </div>
             </li>
           ))}
-
-          {notes?.length === 0 && (
-            <li className="text-sm text-muted-foreground text-center">
-              {user ? "No notes yet." : "Please sign in to see your notes."}
-            </li>
-          )}
         </ul>
       </div>
     </main>
