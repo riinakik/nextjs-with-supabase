@@ -13,6 +13,11 @@ export default function ClientNotesPage() {
   const [notes, setNotes] = useState<Note[] | null>(null);
   const [newNote, setNewNote] = useState("");
   const [user, setUser] = useState<User | null>(null);
+
+  // Change paneeli state
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState("");
+
   const supabase = createClient();
 
   useEffect(() => {
@@ -21,12 +26,13 @@ export default function ClientNotesPage() {
         data: { user },
       } = await supabase.auth.getUser();
       setUser(user);
+
       if (user) {
         const { data } = await supabase
           .from("notes")
           .select("id, title")
           .order("id", { ascending: false });
-        setNotes(data as Note[] | null);
+        setNotes((data as Note[]) ?? []);
       } else {
         setNotes([]);
       }
@@ -34,6 +40,7 @@ export default function ClientNotesPage() {
     getData();
   }, [supabase]);
 
+  // CREATE
   const addNote = async (e: FormEvent) => {
     e.preventDefault();
     if (!newNote.trim() || !user) return;
@@ -50,9 +57,49 @@ export default function ClientNotesPage() {
     }
   };
 
+  // DELETE
   const deleteNote = async (id: number) => {
     await supabase.from("notes").delete().eq("id", id);
-    setNotes(notes ? notes.filter((note) => note.id !== id) : null);
+    setNotes((prev) => (prev ? prev.filter((n) => n.id !== id) : prev));
+    // kui kustutad parajasti muudetava, sule paneel
+    if (editId === id) {
+      setEditId(null);
+      setEditValue("");
+    }
+  };
+
+  // OPEN CHANGE PANEEL
+  const startEdit = (note: Note) => {
+    if (editId === note.id) {
+      // kui juba avatud, sulge
+      setEditId(null);
+      setEditValue("");
+    } else {
+      setEditId(note.id);
+      setEditValue(note.title);
+    }
+  };
+
+  // SAVE (UPDATE)
+  const saveEdit = async (e: FormEvent, id: number) => {
+    e.preventDefault();
+    const title = editValue.trim();
+    if (!title) return;
+
+    const { error } = await supabase
+      .from("notes")
+      .update({ title })
+      .eq("id", id);
+    if (!error) {
+      // optimistlik uuendus
+      setNotes((prev) =>
+        prev ? prev.map((n) => (n.id === id ? { ...n, title } : n)) : prev
+      );
+      setEditId(null);
+      setEditValue("");
+    } else {
+      console.error("Update failed:", error.message);
+    }
   };
 
   return (
@@ -81,17 +128,56 @@ export default function ClientNotesPage() {
         <ul className="space-y-3">
           {notes?.map((note) => (
             <li
-              key={note.id}
+              key={`${note.id}-${note.title}`} // kui pealkiri muutub, remountib rea (hea fallback)
               className="flex items-center justify-between rounded-md border border-border bg-card px-4 py-3"
             >
               <span className="font-medium truncate">{note.title}</span>
-              <button
-                onClick={() => deleteNote(note.id)}
-                className="text-sm rounded-md border border-red-600 text-red-500 px-3 py-1 hover:bg-red-600 hover:text-white transition"
-                aria-label={`Delete ${note.title}`}
-              >
-                Delete
-              </button>
+
+              {/* Parempoolsed nupud; paneel avaneb nupugrupi paremale */}
+              <div className="relative flex items-center gap-2 overflow-visible">
+                {/* DELETE */}
+                <button
+                  onClick={() => deleteNote(note.id)}
+                  className="text-sm rounded-md border border-red-600 text-red-500 px-3 py-1 hover:bg-red-600 hover:text-white transition"
+                  aria-label={`Delete ${note.title}`}
+                >
+                  Delete
+                </button>
+
+                {/* CHANGE */}
+                <button
+                  type="button"
+                  onClick={() => startEdit(note)}
+                  className="text-sm rounded-md border px-3 py-1 hover:bg-accent"
+                >
+                  Change
+                </button>
+
+                {/* Paneel paremale, nähtav ainult aktiivsel real */}
+                {editId === note.id && (
+                  <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 z-10">
+                    <form
+                      onSubmit={(e) => saveEdit(e, note.id)}
+                      className="flex items-center gap-2 bg-card border border-border rounded-md p-2 shadow-lg"
+                    >
+                      <input
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        className="rounded-md border px-2 py-1 text-sm bg-background w-44"
+                        placeholder="New title"
+                        required
+                        autoFocus
+                      />
+                      <button
+                        type="submit"
+                        className="text-sm rounded-md px-3 py-1 bg-primary text-primary-foreground hover:opacity-90"
+                      >
+                        Save
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </div>
             </li>
           ))}
 
