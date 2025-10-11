@@ -1,71 +1,101 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { absUrl } from "@/lib/abs-url";
 
 export const dynamic = "force-dynamic";
 
+type Note = { id: number; title: string };
+
+function isNoteArray(u: unknown): u is Note[] {
+  return (
+    Array.isArray(u) &&
+    u.every(
+      (n) =>
+        n &&
+        typeof n === "object" &&
+        typeof (n as { id: unknown }).id === "number" &&
+        typeof (n as { title: unknown }).title === "string"
+    )
+  );
+}
+
 export default async function NotesPage() {
   const supabase = await createClient();
-
-  // Auth
   const {
     data: { session },
   } = await supabase.auth.getSession();
+
   if (!session) redirect("/auth/login");
 
-  // READ
-  const { data: notes } = await supabase
-    .from("notes")
-    .select("id, title")
-    .order("id", { ascending: false });
+  const cookieHeader = (await cookies()).toString();
 
-  // CREATE
+  const notesResponse = await fetch(absUrl("/api/notes"), {
+    cache: "no-store",
+    headers: { Cookie: cookieHeader },
+  });
+
+  const parsed: unknown = notesResponse.ok ? await notesResponse.json() : [];
+  const notes: Note[] = isNoteArray(parsed) ? parsed : [];
+
+  // --- Server Actions ---
   async function addNote(formData: FormData) {
     "use server";
     const title = (formData.get("title") ?? "").toString().trim();
     if (!title) return;
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session) redirect("/auth/login");
+    const cookieHeader = (await cookies()).toString();
+    await fetch(absUrl("/api/notes"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookieHeader,
+      },
+      body: JSON.stringify({ title }),
+    });
 
-    await supabase.from("notes").insert({ title, user_id: session.user.id });
     revalidatePath("/notes");
   }
 
-  // DELETE
   async function deleteNote(formData: FormData) {
     "use server";
     const id = (formData.get("id") ?? "").toString();
     if (!id) return;
 
-    const supabase = await createClient();
-    await supabase.from("notes").delete().eq("id", id);
+    const cookieHeader = (await cookies()).toString();
+    await fetch(absUrl(`/api/notes/${id}`), {
+      method: "DELETE",
+      headers: { Cookie: cookieHeader },
+    });
+
     revalidatePath("/notes");
   }
 
-  // UPDATE
   async function updateNote(formData: FormData) {
     "use server";
     const id = (formData.get("id") ?? "").toString();
     const title = (formData.get("title") ?? "").toString().trim();
     if (!id || !title) return;
 
-    const supabase = await createClient();
-    await supabase.from("notes").update({ title }).eq("id", id);
+    const cookieHeader = (await cookies()).toString();
+    await fetch(absUrl(`/api/notes/${id}`), {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookieHeader,
+      },
+      body: JSON.stringify({ title }),
+    });
 
-    redirect("/notes"); // sulgeb <details> ja värskendab
+    revalidatePath("/notes");
   }
 
-  // UI
   return (
     <main className="flex flex-col items-center justify-start min-h-screen bg-background text-foreground p-6">
       <div className="w-full max-w-xl">
         <h1 className="text-3xl font-bold mb-6 text-center">Notes (Server)</h1>
 
-        {/* ADD */}
         <form action={addNote} className="flex mb-6 gap-2">
           <input
             name="title"
@@ -81,17 +111,15 @@ export default async function NotesPage() {
           </button>
         </form>
 
-        {/* LIST */}
         <ul className="space-y-3">
           {(notes ?? []).map((note) => (
             <li
-              key={note.id}
+              key={`${note.id}-${note.title}`}
               className="flex items-center justify-between rounded-md border border-border bg-card px-4 py-3"
             >
               <span className="font-medium truncate">{note.title}</span>
 
               <div className="relative flex items-center gap-2 overflow-visible">
-                {/* DELETE */}
                 <form action={deleteNote}>
                   <input type="hidden" name="id" value={String(note.id)} />
                   <button
@@ -102,7 +130,6 @@ export default async function NotesPage() {
                   </button>
                 </form>
 
-                {/* UPDATE -> paremale paneel */}
                 <details className="relative">
                   <summary className="list-none cursor-pointer text-sm rounded-md border px-3 py-1 hover:bg-accent">
                     Change
