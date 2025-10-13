@@ -3,23 +3,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { absUrl } from "@/lib/abs-url";
+import { isNoteArray, type Note } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
-
-type Note = { id: number; title: string };
-
-function isNoteArray(u: unknown): u is Note[] {
-  return (
-    Array.isArray(u) &&
-    u.every(
-      (n) =>
-        n &&
-        typeof n === "object" &&
-        typeof (n as { id: unknown }).id === "number" &&
-        typeof (n as { title: unknown }).title === "string"
-    )
-  );
-}
 
 export default async function NotesPage() {
   const supabase = await createClient();
