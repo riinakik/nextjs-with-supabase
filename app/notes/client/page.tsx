@@ -1,8 +1,7 @@
 "use client";
 
-import { createClient } from "@/lib/supabase/client";
-import { useEffect, useState, FormEvent } from "react";
-import type { User } from "@supabase/supabase-js";
+import { useState, FormEvent } from "react";
+import { useNotes } from "@/lib/hooks/useNotes";
 
 type Note = {
   id: number;
@@ -10,161 +9,67 @@ type Note = {
 };
 
 export default function ClientNotesPage() {
-  const [notes, setNotes] = useState<Note[] | null>(null);
-  const [newNote, setNewNote] = useState("");
-  const [user, setUser] = useState<User | null>(null);
+  // SAMM 2: Kogu andmeloogika on nüüd selle ühe rea taga peidus!
+  const { notes, isLoading, addNote, deleteNote, updateNote } = useNotes();
 
-  // Change paneeli state
+  // SAMM 3: Alles jääb AINULT UI-ga seotud olek
+  const [newNote, setNewNote] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
 
-  // Supabase client on vajalik autentimiseks
-  const supabase = createClient();
-
-  useEffect(() => {
-    const checkUserAndFetchNotes = async () => {
-      // 1. SAMM: Kontrollime kasutajat endiselt otse Supabase'ist
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setUser(user);
-
-      if (user) {
-        // --- VANA KOOD (otse Supabasest) ---
-        // const { data } = await supabase
-        //   .from("notes")
-        //   .select("id, title")
-        //   .order("id", { ascending: false });
-        // setNotes((data as Note[]) ?? []);
-
-        // --- UUS KOOD (läbi meie API) ---
-        // Teeme GET päringu omaenda API otspunkti.
-        // Kliendipoolsed päringud lisavad automaatselt vajalikud küpsised,
-        // seega API teab, kes on sisse logitud.
-        const response = await fetch("/api/notes");
-        if (response.ok) {
-          const data = await response.json();
-          setNotes(data);
-        } else {
-          console.error("Failed to fetch notes");
-          setNotes([]);
-        }
-      } else {
-        setNotes([]);
-      }
-    };
-    checkUserAndFetchNotes();
-    // Eemaldame 'supabase' sõltuvuse, et vältida liigseid päringuid.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // CREATE
-  const addNote = async (e: FormEvent) => {
+  // SAMM 4: Sündmuste käsitlejad (handlers) muutuvad väga lihtsaks.
+  // Nad lihtsalt kutsuvad hook'ist saadud funktsioone.
+  const handleAddNote = async (e: FormEvent) => {
     e.preventDefault();
-    if (!newNote.trim() || !user) return;
-
-    // --- VANA KOOD ---
-    // const { data: addedNote } = await supabase
-    //   .from("notes")
-    //   .insert({ title: newNote.trim(), user_id: user.id })
-    //   .select()
-    //   .single();
-
-    // --- UUS KOOD ---
-    // Teeme POST päringu, saates uue märkme pealkirja kehas (body).
-    const response = await fetch("/api/notes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: newNote.trim() }),
-    });
-
-    if (response.ok) {
-      const addedNote = await response.json();
-      setNotes([addedNote as Note, ...(notes || [])]);
-      setNewNote("");
-    } else {
-      console.error("Failed to add note");
+    const success = await addNote(newNote);
+    if (success) {
+      setNewNote(""); // Tühjenda väli ainult õnnestumise korral
     }
   };
 
-  // DELETE
-  const deleteNote = async (id: number) => {
-    // --- VANA KOOD ---
-    // await supabase.from("notes").delete().eq("id", id);
+  const handleSaveEdit = async (e: FormEvent, id: number) => {
+    e.preventDefault();
+    await updateNote(id, editValue);
+    // Sulge muutmise paneel
+    setEditId(null);
+    setEditValue("");
+  };
 
-    // --- UUS KOOD ---
-    // Teeme DELETE päringu spetsiifilisele URL-ile, mis sisaldab märkme ID-d.
-    const response = await fetch(`/api/notes/${id}`, {
-      method: "DELETE",
-    });
-
-    if (response.ok) {
-      // DELETE tagastab 204, mis on "ok"
-      setNotes((prev) => (prev ? prev.filter((n) => n.id !== id) : prev));
-      // kui kustutad parajasti muudetava, sule paneel
-      if (editId === id) {
-        setEditId(null);
-        setEditValue("");
-      }
-    } else {
-      console.error("Failed to delete note");
+  const handleDeleteNote = async (id: number) => {
+    await deleteNote(id);
+    // Kui kustutati parajasti muudetav märge, sulge paneel
+    if (editId === id) {
+      setEditId(null);
     }
   };
 
-  // OPEN CHANGE PANEEL - SEE JÄÄB SAMAKS, KUNA HALDAB AINULT UI OLEKUT
+  // See funktsioon jääb samaks, kuna haldab ainult UI olekut
   const startEdit = (note: Note) => {
     if (editId === note.id) {
-      setEditId(null);
-      setEditValue("");
+      setEditId(null); // Kui klikitakse uuesti, sulge
     } else {
       setEditId(note.id);
       setEditValue(note.title);
     }
   };
 
-  // SAVE (UPDATE)
-  const saveEdit = async (e: FormEvent, id: number) => {
-    e.preventDefault();
-    const title = editValue.trim();
-    if (!title) return;
+  // SAMM 5: Kasutame laadimise olekut, et kuvada kasutajale tagasisidet
+  if (isLoading) {
+    return (
+      <main className="flex justify-center items-center min-h-screen">
+        <p className="text-xl">Loading notes...</p>
+      </main>
+    );
+  }
 
-    // --- VANA KOOD ---
-    // const { error } = await supabase
-    //   .from("notes")
-    //   .update({ title })
-    //   .eq("id", id);
-    // if (!error) {
-    //   // ...
-    // }
-
-    // --- UUS KOOD ---
-    // Teeme PATCH päringu, saates uue pealkirja kehas.
-    const response = await fetch(`/api/notes/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title }),
-    });
-
-    if (response.ok) {
-      // uuendus
-      setNotes((prev) =>
-        prev ? prev.map((n) => (n.id === id ? { ...n, title } : n)) : prev
-      );
-      setEditId(null);
-      setEditValue("");
-    } else {
-      const result = await response.json();
-      console.error("Update failed:", result.error);
-    }
-  };
-
+  // SAMM 6: JSX jääb peaaegu samaks, aga on seotud uute, lihtsate handleritega
   return (
     <main className="flex flex-col items-center justify-start min-h-screen bg-background text-foreground p-6">
       <div className="w-full max-w-xl">
         <h1 className="text-3xl font-bold mb-6 text-center">Notes (Client)</h1>
 
         {/* Add form */}
-        <form onSubmit={addNote} className="flex mb-6 gap-2">
+        <form onSubmit={handleAddNote} className="flex mb-6 gap-2">
           <input
             value={newNote}
             onChange={(e) => setNewNote(e.target.value)}
@@ -184,7 +89,7 @@ export default function ClientNotesPage() {
         <ul className="space-y-3">
           {notes?.map((note) => (
             <li
-              key={`${note.id}-${note.title}`}
+              key={`${note.id}-${note.title}`} // Key peaks olema stabiilne
               className="flex items-center justify-between rounded-md border border-border bg-card px-4 py-3"
             >
               <span className="font-medium truncate">{note.title}</span>
@@ -192,7 +97,7 @@ export default function ClientNotesPage() {
               <div className="relative flex items-center gap-2 overflow-visible">
                 {/* DELETE */}
                 <button
-                  onClick={() => deleteNote(note.id)}
+                  onClick={() => handleDeleteNote(note.id)}
                   className="text-sm rounded-md border border-red-600 text-red-500 px-3 py-1 hover:bg-red-600 hover:text-white transition"
                   aria-label={`Delete ${note.title}`}
                 >
@@ -212,7 +117,7 @@ export default function ClientNotesPage() {
                 {editId === note.id && (
                   <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 z-10">
                     <form
-                      onSubmit={(e) => saveEdit(e, note.id)}
+                      onSubmit={(e) => handleSaveEdit(e, note.id)}
                       className="flex items-center gap-2 bg-card border border-border rounded-md p-2 shadow-lg"
                     >
                       <input
