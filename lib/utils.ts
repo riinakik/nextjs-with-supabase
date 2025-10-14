@@ -10,6 +10,8 @@ export const hasEnvVars =
   process.env.NEXT_PUBLIC_SUPABASE_URL &&
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY;
 
+
+//Notes server
 export type Note = { id: number; title: string };
 
 export function isNoteArray(u: unknown): u is Note[] {
@@ -24,3 +26,21 @@ export function isNoteArray(u: unknown): u is Note[] {
     )
   );
 }
+
+//Contacts 
+export type Contact = {
+  id: number;
+  name: string;
+  phone: string;
+  created_at: string;
+};
+
+export function isContactArray(x: unknown): x is Contact[] {
+  return Array.isArray(x) && x.every(i =>
+    typeof i?.id === "number" &&
+    typeof i?.name === "string" &&
+    typeof i?.phone === "string" &&
+    typeof i?.created_at === "string"
+  );
+}
+
